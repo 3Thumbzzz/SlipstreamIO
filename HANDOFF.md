@@ -8,8 +8,8 @@ breaks if you change a given piece — read the section that covers what you are
 about to touch. Sections are referenced **by name**, never by number, so
 inserting one cannot falsify a citation elsewhere.
 
-Snapshot: **74 package modules, 75 test modules + fixtures and `conftest.py`,
-1777 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
+Snapshot: **74 package modules, 76 test modules + fixtures and `conftest.py`,
+1783 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
 
 ---
 
@@ -611,6 +611,21 @@ program (Traktor `8m` plus a matching `key_value`; VirtualDJ and SlipStream
 and `write_key_jobs` runs it through `write_metadata_jobs`, so the engine merges
 tags and key into **one** call per file. Two entry points means two full walks of
 a 134 MB file to set two attributes on one entry.
+
+### Rendering a VirtualDJ playlist row
+
+A `.vdjfolder` `<song …/>` row is VirtualDJ's cached view of the song (size,
+length, BPM, key, artist, title, remix). **A row already in the playlist is
+kept exactly** — `render_vdjfolder(tracks, nodup, existing)` reuses it and only
+renumbers `idx`; `write_membership_job` passes the file's current text. Only a
+row new to the playlist is built, from the target's own entry where it has one
+(`engine._target_view`), with the file's real `size`. Until 2026-11-03 every
+membership write rebuilt every row from the Track it was handed, with a
+hard-coded `size="0"`, and a sync handed over the *source's* copy, so a
+Traktor → VirtualDJ sync gave VirtualDJ's playlists Traktor's key, BPM and
+rounded length and dropped `remix` (2,877 of 2,882 rows in "BTTB-ALL"). 459
+playlist files written since August still carry zeroed rows. Tests:
+`tests/test_vdjfolder_rows.py`.
 
 ### Rendering a VirtualDJ `<Song>`
 
@@ -1810,10 +1825,10 @@ Called **only** from `adapters/`; nothing else should import these directly.
 | `playlists_window.py` | "Playlists…" popup: every playlist containing a given track, in every loaded program, grouped per program with the track's own first. Each row carries its source. |
 
 ### `tests/`
-75 modules plus `fixtures.py`, `conftest.py` (`SAMPLE_NML`, `EMPTY_VDJ_XML`, `DOO_RAG_SONG`,
+76 modules plus `fixtures.py`, `conftest.py` (`SAMPLE_NML`, `EMPTY_VDJ_XML`, `DOO_RAG_SONG`,
 `write_sample`) and `fake_adapter.py`. Coverage spans the model and diff
 (`test_status`, `test_status_glyphs`, `test_playlist_status`, `test_baseline`,
-`test_cues`, `test_cue_roundtrip`, `test_grid_phase`, `test_playcount_and_lookup`, `test_packaging`, `test_poi_parsing`, `test_key_routing`,
+`test_cues`, `test_cue_roundtrip`, `test_grid_phase`, `test_playcount_and_lookup`, `test_packaging`, `test_vdjfolder_rows`, `test_poi_parsing`, `test_key_routing`,
 `test_line_endings`, `test_name_collisions`, `test_entity_paths`, `test_cleanup`),
 IO and writers
 (`test_playlist_write`, `test_playlist_removal`, `test_collection_removal`,

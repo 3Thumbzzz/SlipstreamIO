@@ -166,7 +166,13 @@ class VdjAdapter(LibraryAdapter):
         nodup = node.playlist.no_duplicates
 
         def job():
-            atomic_write_text(dest, vdj_write.render_vdjfolder(tracks, nodup))
+            # The rows already there are kept as VirtualDJ wrote them.
+            try:
+                with open(dest, encoding="utf-8", errors="replace") as f:
+                    existing = f.read()
+            except OSError:
+                existing = None
+            atomic_write_text(dest, vdj_write.render_vdjfolder(tracks, nodup, existing))
 
         return job
 

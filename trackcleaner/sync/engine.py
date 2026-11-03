@@ -142,6 +142,12 @@ def _target_provably_newer(src, tgt) -> bool:
     return tgt.modified > src.modified
 
 
+def _target_view(target_lib, track: Track) -> Track:
+    """``track`` as the target library holds it, when it holds an entry."""
+    own = target_lib.tracks.get(track.key) if target_lib is not None else None
+    return own if own is not None and own.in_database else track
+
+
 def _bpm_of(track) -> float | None:
     return getattr(track, "bpm", None) or None
 
@@ -1151,8 +1157,14 @@ class SyncEngine:
         """
         adapter = self.adapter_for(target)
         target_lib = self.library_for(target)
-        ordered_tracks = [source_lib.tracks[k] for k in node.playlist.track_keys
-                         if k in source_lib.tracks]
+        # A membership row is the *target's* view of a track, so it is drawn
+        # from the target's own entry where there is one, and from the source
+        # only for a track the target does not hold. Handing over the source's
+        # copy is how a Traktor -> VirtualDJ sync gave every VirtualDJ playlist
+        # row Traktor's key, BPM and length.
+        ordered_tracks = [_target_view(target_lib, source_lib.tracks[k])
+                          for k in node.playlist.track_keys
+                          if k in source_lib.tracks]
         mirror = mode in (UPDATE, OVERWRITE)
         existing = (self._find_target_node(node, target_lib)
                     if target_lib is not None else None)

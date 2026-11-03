@@ -458,19 +458,61 @@ def _render_new_song_block(track: Track) -> str:
 
 
 # ============================ .vdjfolder writing =========================
-def render_vdjfolder(tracks: list[Track], no_duplicates: bool = False) -> str:
+_FOLDER_ROW_RE = re.compile(r'<song\b[^>]*?/>', re.DOTALL)
+_ROW_PATH_RE = re.compile(r'\bpath="([^"]*)"')
+_ROW_IDX_RE = re.compile(r'\s*\bidx="[^"]*"')
+
+
+def _existing_rows(existing: str | None) -> dict:
+    """``{track key: [row text, …]}`` for the ``<song …/>`` rows of a playlist
+    file's current text, each with its ``idx`` removed, in file order."""
+    rows: dict = {}
+    for m in _FOLDER_ROW_RE.finditer(existing or ""):
+        path = _ROW_PATH_RE.search(m.group(0))
+        if path is None:
+            continue
+        key = matching.path_key(matching.decode_entities(path.group(1)))
+        rows.setdefault(key, []).append(_ROW_IDX_RE.sub("", m.group(0)))
+    return rows
+
+
+def _file_size(path: str) -> int:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def render_vdjfolder(tracks: list[Track], no_duplicates: bool = False,
+                     existing: str | None = None) -> str:
     """The full text of a .vdjfolder holding ``tracks`` in order. Split out from
     :func:`write_vdjfolder` so a caller can write it atomically off-thread.
 
     ``no_duplicates`` controls the ``<VirtualFolder noDuplicates=…>`` flag that
-    tells VirtualDJ whether the same track may appear twice in this playlist."""
+    tells VirtualDJ whether the same track may appear twice in this playlist.
+
+    **A row already in the playlist is kept as VirtualDJ wrote it** -- only its
+    ``idx`` is renumbered -- when ``existing``, the file's current text, is
+    given. A row is VirtualDJ's cached view of the song (size, length, BPM,
+    key, remix…), and rebuilding every row from the ``Track`` handed in meant a
+    Traktor -> VirtualDJ sync rewrote all of them with **Traktor's** key, BPM
+    and rounded length, and ``size="0"``: 2,877 of 2,882 rows in one reported
+    playlist. Only rows new to the playlist are built, with the file's real
+    size.
+    """
     flag = "yes" if no_duplicates else "no"
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              f'<VirtualFolder noDuplicates="{flag}">']
+    kept = _existing_rows(existing)
     for idx, t in enumerate(tracks):
+        reuse = kept.get(matching.path_key(t.path))
+        if reuse:
+            row = reuse.pop(0)
+            lines.append("\t" + row[:-2].rstrip() + f' idx="{idx}" />')
+            continue
         attrs = [
             f'path={_qattr(t.path)}',
-            f'size="0"',
+            f'size="{_file_size(t.path)}"',
             f'songlength="{t.length or 0:.1f}"',
         ]
         if t.bpm:
