@@ -21,8 +21,14 @@ def is_any_running(image_names) -> bool:
     Windows only (``tasklist``); elsewhere, and on any failure, "can't tell"."""
     try:
         import subprocess
+        import sys
+        # No console window: a packaged (windowed) build has none to share,
+        # and this runs before every guarded write.
+        no_window = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                     if sys.platform == "win32" else 0)
         out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"],
-                             capture_output=True, timeout=5, text=True).stdout
+                             capture_output=True, timeout=5, text=True,
+                             creationflags=no_window).stdout
     except (OSError, ValueError, Exception):             # noqa: BLE001
         return False
     running = {line.split(",")[0].strip('"').lower() for line in out.splitlines()}

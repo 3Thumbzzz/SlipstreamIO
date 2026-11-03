@@ -458,3 +458,43 @@ def test_a_track_sync_copies_no_collection_beside_the_users_own(window,
     window.sync_engine.sync_playlist(_node(window), TRAKTOR, OVERWRITE,
                                      target=VDJ)
     assert copied, "a playlist sync still takes one"
+
+
+def test_a_run_of_several_playlists_copies_each_collection_once(window, monkeypatch):
+    """Looped over a folder, every playlist used to copy the whole target
+    collection first: 322 copies of collection.nml (40 GB) and 602 of
+    database.xml (42 GB) had piled up beside the user's own. Inside a batch the
+    copy taken before the first playlist is the run's backup."""
+    copied = []
+    monkeypatch.setattr(backup_mod, "make_backup",
+                        lambda path, program: copied.append(path) or f"{path}.bak")
+    nodes = [n for n in window.libraries[TRAKTOR].playlists() if n.playlist is not None]
+    assert len(nodes) > 1
+
+    with window.sync_engine.batch():
+        results = [window.sync_engine.sync_playlist(n, TRAKTOR, OVERWRITE, target=VDJ)
+                   for n in nodes]
+
+    assert len(copied) == 1, "one copy of the VirtualDJ database for the whole run"
+    assert {r.backup_path for r in results} == {copied[0] + ".bak"}, \
+        "every playlist reports the run's backup"
+
+    window.sync_engine.sync_playlist(nodes[0], TRAKTOR, OVERWRITE, target=VDJ)
+    assert len(copied) == 2, "outside a batch a playlist sync still takes its own"
+
+
+def test_the_sync_command_runs_as_one_batch(window, monkeypatch):
+    """The window's Sync over a selection is the case that piled them up."""
+    copied = []
+    monkeypatch.setattr(backup_mod, "make_backup",
+                        lambda path, program: copied.append(path) or "")
+    nodes = [n for n in window.libraries[TRAKTOR].playlists() if n.playlist is not None]
+    tree = window.playlist_panel.tree_for(TRAKTOR)
+    tree.select_nodes(nodes)
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: QMessageBox.Ok)
+
+    window._sync_selected(TRAKTOR, OVERWRITE, None, VDJ)
+
+    assert len(copied) == 1

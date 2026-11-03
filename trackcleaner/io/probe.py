@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from typing import Optional
 
 from ..model import matching
 from ..model.library import Track
+
+# Windows: no console window per probe -- a packaged (windowed) build has no
+# console for ffprobe to share, so each import would flash one up.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
 
 # Audio extensions we accept for import (drop filtering + a sanity gate here).
 AUDIO_EXTS = (".mp3", ".wav", ".flac", ".aiff", ".aif", ".m4a", ".aac",
@@ -34,7 +39,7 @@ def probe_track(path: str, source: str) -> Optional[Track]:
         out = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", "-select_streams", "a:0", path],
-            capture_output=True, timeout=30,
+            capture_output=True, timeout=30, creationflags=_NO_WINDOW,
         ).stdout
         data = json.loads(out)
     except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):

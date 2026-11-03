@@ -90,3 +90,34 @@ def test_other_platforms_keep_their_path(monkeypatch):
     app_mod._find_mac_tools()
 
     assert os.environ["PATH"] == "C:\\Windows"
+
+
+# ================= no console window per external tool call ==================
+def test_every_command_line_call_hides_its_console_window():
+    """Reported on the packaged exe: an Overwrite sync flashed an ffprobe
+    console window per track, non-stop, freezing the desktop. Run from source
+    the tools share Python's console, so it never showed; a windowed build has
+    none, and Windows opens one per call unless told not to.
+
+    Every ``subprocess.run`` in the package must pass ``creationflags``
+    (``CREATE_NO_WINDOW`` on Windows, 0 elsewhere). ``Popen`` is only used for
+    Explorer, a windowed program that opens no console."""
+    import ast
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "trackcleaner")
+    missing = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(dirpath, name)
+            tree = ast.parse(open(path, encoding="utf-8").read())
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in ("run", "check_output", "call")
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "subprocess"
+                        and not any(k.arg == "creationflags" for k in node.keywords)):
+                    missing.append(f"{os.path.relpath(path, root)}:{node.lineno}")
+
+    assert missing == []

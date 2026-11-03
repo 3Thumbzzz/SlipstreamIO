@@ -19,6 +19,7 @@ import math
 import os
 import re
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
@@ -374,12 +375,18 @@ class StartTimeCache:
         return len(self._cache)
 
 
+# Windows: no console window per probe. A packaged (windowed) build has no
+# console for ffprobe to share, so without this every probe opened one -- a
+# sync over thousands of uncached tracks flashed thousands of them.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+
+
 def _ffprobe_start_time(path: str) -> Optional[float]:
     try:
         out = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_streams", "-select_streams", "a:0", path],
-            capture_output=True, timeout=30,
+            capture_output=True, timeout=30, creationflags=_NO_WINDOW,
         ).stdout
         streams = json.loads(out).get("streams", [])
         if not streams:

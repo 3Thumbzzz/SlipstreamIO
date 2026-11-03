@@ -2139,6 +2139,12 @@ class MainWindow(QMainWindow):
         logged: list[str] = []
 
         def do_sync():
+            # One backup per target collection for the whole run, not one per
+            # playlist (see SyncEngine.batch).
+            with self.sync_engine.batch():
+                _sync_all()
+
+        def _sync_all():
             for target in targets:
                 s = stats[target]
                 for node in nodes:

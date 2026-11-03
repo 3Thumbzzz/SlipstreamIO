@@ -9,7 +9,7 @@ about to touch. Sections are referenced **by name**, never by number, so
 inserting one cannot falsify a citation elsewhere.
 
 Snapshot: **74 package modules, 75 test modules + fixtures and `conftest.py`,
-1770 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
+1773 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
 
 ---
 
@@ -57,6 +57,14 @@ macOS (Apple silicon) runners and publishes a release with the two zips.
   folder beside the app overrides them (`config/paths.images_dir`).
 - **ffmpeg/ffprobe are not bundled.** A Finder-launched macOS app gets a bare
   PATH, so `app._find_mac_tools` appends Homebrew's directories.
+- **Every `subprocess.run` passes `creationflags=CREATE_NO_WINDOW`** on
+  Windows (0 elsewhere). Run from source the tools share Python's console; a
+  windowed build has none, so 1.0.0 opened a console per ffprobe and an
+  Overwrite over uncached tracks flashed them non-stop, freezing the desktop.
+  `tests/test_packaging.py` fails on any call that omits it.
+- **A packaged build has its own state.** Its start-time cache, baseline and
+  settings sit beside the exe, separate from a source checkout's, so a first
+  sync from the exe probes every track it touches.
 - **Windows-only features stay Windows-only on macOS:** Recycle Bin
   (`io/recycle.py` refuses, so nothing is deleted), Explorer reveal, the
   "program is running" check (answers "can't tell"), and the drag-scroll mouse
@@ -88,7 +96,10 @@ whatever else the change achieves.
 - **A whole-library backup is taken before any destructive collection change**
   — deletions, imports and Clean up, via `guarded_write`. It covers every
   library file `Paths` names (see **Backups**). A *playlist* sync
-  additionally copies the collection it is about to rewrite; a single-track
+  additionally copies the collection it is about to rewrite — **once per run**:
+  the window's Sync wraps its loop in `SyncEngine.batch()`, because one copy
+  per playlist had left 322 copies of `collection.nml` (40 GB) and 602 of
+  `database.xml` (42 GB) beside the originals. A single-track
   sync does not (see **Sync**).
 - **VirtualDJ must be closed before `database.xml` is written.** VirtualDJ
   rewrites its database on exit and would clobber the edit; the app checks

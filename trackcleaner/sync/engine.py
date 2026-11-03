@@ -35,7 +35,7 @@ synced (green), not flagged.
 from __future__ import annotations
 
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
 from ..adapters import LibraryAdapter, build_adapters
@@ -233,9 +233,44 @@ class SyncEngine:
         #: the write paths are reachable directly (drag-add, tests) without going
         #: through a sync entry point.
         self.timing = synclog.Timings()
+        #: Inside :meth:`batch`: ``{collection path: backup path}`` for the
+        #: collections already copied this run. None outside a batch.
+        self._batch_backups: dict | None = None
         for adapter in self.adapters.values():
             if adapter.start_times is None:
                 adapter.start_times = start_time_cache
+
+    @contextmanager
+    def batch(self):
+        """One backup per target collection for a run of several playlists.
+
+        Every :meth:`sync_playlist` copies the collection it is about to
+        rewrite. Looped over a folder that was one full copy **per playlist**:
+        322 of ``collection.nml`` (40 GB) and 602 of ``database.xml`` (42 GB)
+        had piled up beside the originals, and copying 134 MB before each
+        playlist was much of what a large Overwrite spent its time on. The copy
+        taken before the first playlist already holds the state the run started
+        from -- every later write in the run is this app's own -- so inside a
+        batch each target is copied once. Outside one, nothing changes.
+        """
+        outer = self._batch_backups is None
+        if outer:
+            self._batch_backups = {}
+        try:
+            yield
+        finally:
+            if outer:
+                self._batch_backups = None
+
+    def _backup_target(self, target_path: str, target: str) -> str:
+        """The run's backup of ``target_path``: taken now, or -- inside a
+        :meth:`batch` that already took one -- the one taken first."""
+        if self._batch_backups is not None and target_path in self._batch_backups:
+            return self._batch_backups[target_path]
+        made = backup.make_backup(target_path, target)
+        if self._batch_backups is not None:
+            self._batch_backups[target_path] = made
+        return made
 
     def adapter_for(self, source: str) -> LibraryAdapter:
         return self.adapters[source]
@@ -516,7 +551,7 @@ class SyncEngine:
         # simply did not show the second and a half it costs.
         self._begin_run()
         with self.timing.phase("backup"):
-            result.backup_path = backup.make_backup(target_path, target)
+            result.backup_path = self._backup_target(target_path, target)
 
         self.log.section(f"Run: {mode} {source} -> {target}")
         self.log.event("playlist", name=node.name,
