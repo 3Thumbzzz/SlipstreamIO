@@ -56,6 +56,8 @@ OVERWRITE = "overwrite"
 SKIP_TARGET_OWNS = "target_owns"
 SKIP_CONFLICT = "conflict"
 SKIP_UNKNOWN = "unknown_history"
+#: The target's collection cannot hold this file (VirtualDJ: another drive's).
+SKIP_OTHER_DRIVE = "other_drive"
 
 
 @dataclass
@@ -620,7 +622,14 @@ class SyncEngine:
                 in_collection = tgt_t is not None and tgt_t.in_database
                 should_write = False
                 reason = ""
-                if not in_collection:
+                if not in_collection and not self.adapter_for(target).accepts_path(
+                        src_track.path):
+                    # No entry is created; the playlist row is still written.
+                    result.tracks_skipped += 1
+                    result.skipped_by_reason[SKIP_OTHER_DRIVE] = \
+                        result.skipped_by_reason.get(SKIP_OTHER_DRIVE, 0) + 1
+                    reason = "the target collection cannot hold a file on that drive"
+                elif not in_collection:
                     should_write = True            # add missing track (with cues)
                     reason = "not in the target collection"
                 elif self.content_in_sync(src_track, tgt_t, fields):
@@ -786,6 +795,8 @@ class SyncEngine:
         tgt_t = target_lib.tracks.get(key)
         if tgt_t is not None and tgt_t.in_database:
             return None
+        if not self.adapter_for(target).accepts_path(src_track.path):
+            return None                       # another drive's: row only, no entry
 
         pois = _retimed_pois(src_track, self.adapter_for(source),
                              self.adapter_for(target), _bpm_of(tgt_t))
@@ -851,6 +862,14 @@ class SyncEngine:
             self.log.check_parses("before", target_path)
         tgt_lib = self.library_for(target)
         fields = self.syncable_fields(source, target)
+        refused = [t for t in tracks
+                   if not getattr(tgt_lib.tracks.get(t.key) if tgt_lib else None,
+                                  "in_database", False)
+                   and not self.adapter_for(target).accepts_path(t.path)]
+        if refused:
+            result.tracks_skipped += len(refused)
+            result.skipped_by_reason[SKIP_OTHER_DRIVE] = len(refused)
+            tracks = [t for t in tracks if t not in refused]
         for src_track in tracks:
             self.log.event("track", title=getattr(src_track, "title", ""),
                            key=src_track.key)

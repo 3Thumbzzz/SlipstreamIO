@@ -51,7 +51,7 @@ from ..model import matching
 from ..model import status as status_mod
 from ..model.cues import StartTimeCache
 from ..model.library import Library, Track, TreeNode, VDJ, TRAKTOR, path_ci
-from ..sync.engine import (NEW, OVERWRITE, SKIP_CONFLICT,
+from ..sync.engine import (NEW, OVERWRITE, SKIP_CONFLICT, SKIP_OTHER_DRIVE,
                            SKIP_TARGET_OWNS, SKIP_UNKNOWN,
                            SyncEngine, UPDATE)
 from . import context_menus
@@ -2281,6 +2281,8 @@ class MainWindow(QMainWindow):
         SKIP_CONFLICT: "changed on both sides — use Overwrite to force",
         SKIP_UNKNOWN: ("never compared before — run Overwrite once to establish "
                        "a baseline"),
+        SKIP_OTHER_DRIVE: ("on another drive — VirtualDJ keeps that drive's songs "
+                           "in its own database"),
         "": "the target looks newer",
     }
 

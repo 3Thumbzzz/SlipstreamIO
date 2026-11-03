@@ -51,6 +51,27 @@ class VdjAdapter(LibraryAdapter):
     def is_configured(self) -> bool:
         return bool(self.paths.xml) and os.path.exists(self.paths.xml)
 
+    def accepts_path(self, path: str) -> bool:
+        """VirtualDJ keeps **one database per drive**: ``X:\\VirtualDJ\\database.xml``
+        holds the songs on X:, and the home database those on drives without
+        one. A song from another drive written into a drive's database is one
+        VirtualDJ does not expect there -- three C: tracks created in the D:
+        database were part of what it reported as "Database D: is corrupt".
+
+        Only a drive's own database (``X:\\VirtualDJ``) is held to its drive.
+        Any other location -- the home database, or one elsewhere -- accepts
+        every path: which drives VirtualDJ files there depends on settings this
+        app does not read."""
+        db = self.paths.xml
+        song_drive = os.path.splitdrive(path or "")[0].upper()
+        if not db or not song_drive:
+            return True
+        db_drive = os.path.splitdrive(os.path.abspath(db))[0].upper()
+        drive_db_dir = os.path.join(db_drive + os.sep, "VirtualDJ")
+        if os.path.normcase(os.path.dirname(os.path.abspath(db))) == os.path.normcase(drive_db_dir):
+            return song_drive == db_drive
+        return True
+
     @property
     def collection_path(self) -> str:
         return self.paths.xml

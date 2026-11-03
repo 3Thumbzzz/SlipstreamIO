@@ -8,8 +8,8 @@ breaks if you change a given piece — read the section that covers what you are
 about to touch. Sections are referenced **by name**, never by number, so
 inserting one cannot falsify a citation elsewhere.
 
-Snapshot: **74 package modules, 76 test modules + fixtures and `conftest.py`,
-1783 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
+Snapshot: **74 package modules, 77 test modules + fixtures and `conftest.py`,
+1792 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
 
 ---
 
@@ -626,6 +626,30 @@ Traktor → VirtualDJ sync gave VirtualDJ's playlists Traktor's key, BPM and
 rounded length and dropped `remix` (2,877 of 2,882 rows in "BTTB-ALL"). 459
 playlist files written since August still carry zeroed rows. Tests:
 `tests/test_vdjfolder_rows.py`.
+
+### database.xml must look like VirtualDJ wrote it
+
+On 2026-11-03 VirtualDJ said **"Database D: is corrupt"** about a
+`database.xml` this app had edited (valid XML), and its repair rewrote the
+whole file. Against VirtualDJ's own file ours broke every convention it keeps,
+all of them this app's doing: 596 empty attributes (`Key=""`), 530
+`FileSize="0"`, 73,038 songs closing at column 0 after a line holding one
+space (the cue writer), whitespace runs up to 862,932 characters (removals
+leaving their line behind), empty `<Comment></Comment>`, a 3-space comment
+indent — and **three C: songs written into the D: database**, which
+VirtualDJ's repair re-rooted onto `D:\…`. VirtualDJ keeps **one database per
+drive**; that is the one rule its repair had to correct rather than reformat,
+and it arrived in the same write as most of the empty attributes, so either
+may have been the trigger.
+
+Now: every writer passes the song through `vdj_write._tidy_song` (children one
+per line at two spaces, ` </Song>` at one, no empty attribute, no
+`FileSize="0"`, no empty comment; a block holding stray text is left alone);
+`remove_song_from_xml` takes the song's whole line; a new song records its
+real size or none; and `VdjAdapter.accepts_path` holds a drive's own database
+(`X:\VirtualDJ\database.xml`) to that drive's songs — the engine skips the
+entry (`SKIP_OTHER_DRIVE`) and still writes the playlist row. Tests:
+`tests/test_vdj_database_layout.py`.
 
 ### Rendering a VirtualDJ `<Song>`
 
@@ -1825,10 +1849,10 @@ Called **only** from `adapters/`; nothing else should import these directly.
 | `playlists_window.py` | "Playlists…" popup: every playlist containing a given track, in every loaded program, grouped per program with the track's own first. Each row carries its source. |
 
 ### `tests/`
-76 modules plus `fixtures.py`, `conftest.py` (`SAMPLE_NML`, `EMPTY_VDJ_XML`, `DOO_RAG_SONG`,
+77 modules plus `fixtures.py`, `conftest.py` (`SAMPLE_NML`, `EMPTY_VDJ_XML`, `DOO_RAG_SONG`,
 `write_sample`) and `fake_adapter.py`. Coverage spans the model and diff
 (`test_status`, `test_status_glyphs`, `test_playlist_status`, `test_baseline`,
-`test_cues`, `test_cue_roundtrip`, `test_grid_phase`, `test_playcount_and_lookup`, `test_packaging`, `test_vdjfolder_rows`, `test_poi_parsing`, `test_key_routing`,
+`test_cues`, `test_cue_roundtrip`, `test_grid_phase`, `test_playcount_and_lookup`, `test_packaging`, `test_vdjfolder_rows`, `test_vdj_database_layout`, `test_poi_parsing`, `test_key_routing`,
 `test_line_endings`, `test_name_collisions`, `test_entity_paths`, `test_cleanup`),
 IO and writers
 (`test_playlist_write`, `test_playlist_removal`, `test_collection_removal`,

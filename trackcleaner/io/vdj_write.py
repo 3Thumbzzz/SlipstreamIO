@@ -49,7 +49,48 @@ def _qtext(value: str) -> str:
 _SONG_BLOCK_RE = re.compile(
     r'(<Song\b[^>]*FilePath="([^"]*)"[^>]*>)(.*?)(</Song>)', re.DOTALL
 )
+#: A whole song *line*: its indent, the block, and the line break after it.
+_SONG_LINE_RE = re.compile(
+    r'[ \t]*(<Song\b[^>]*FilePath="([^"]*)"[^>]*>)(.*?)(</Song>)[ \t]*\n?', re.DOTALL
+)
 _DB_CLOSE_RE = re.compile(r"</VirtualDJ_Database>\s*$")
+#: One child of a <Song>: a self-closing element (attribute values may hold a
+#: raw line break), a <Comment>…</Comment>, or any other element with its text.
+_SONG_CHILD_RE = re.compile(
+    r'<(\w+)\b(?:[^>"]|"[^"]*")*/>|<Comment>.*?</Comment>|<(\w+)\b[^>]*>.*?</\2>',
+    re.DOTALL)
+_EMPTY_ATTR_RE = re.compile(r'\s+\w+=""')
+
+
+def _tidy_song(open_tag: str, body: str, close_tag: str) -> str:
+    """A ``<Song>`` block laid out the way VirtualDJ writes one, data unchanged.
+
+    VirtualDJ said "Database D: is corrupt" about a database this module had
+    edited, and its repair emptied it. Against VirtualDJ's own file the edited
+    one broke every one of its conventions, all of them this module's doing:
+    596 empty attributes (``Key=""``), 530 ``FileSize="0"``, 73,038 songs closing
+    at column 0 after a line holding one space, whitespace runs up to 862,932
+    characters, empty ``<Comment></Comment>`` and a 3-space indent. VirtualDJ
+    writes none of them, so none is left here: the opening tag drops empty
+    attributes and ``FileSize="0"`` (VirtualDJ leaves an unknown size out), each
+    child goes on its own line at two spaces, an empty comment is dropped, and
+    the block closes at one space. Text that is not inside a child is not
+    something to guess about, so such a block is returned untouched.
+    """
+    children, pos = [], 0
+    for m in _SONG_CHILD_RE.finditer(body):
+        if body[pos:m.start()].strip():
+            return open_tag + body + close_tag
+        pos = m.end()
+        child = m.group(0)
+        if child == "<Comment></Comment>":
+            continue
+        children.append(_EMPTY_ATTR_RE.sub("", child) if child.endswith("/>") else child)
+    if body[pos:].strip():
+        return open_tag + body + close_tag
+    open_tag = _EMPTY_ATTR_RE.sub("", open_tag).replace(' FileSize="0"', "")
+    return (open_tag + "\n" + "".join(f"  {c}\n" for c in children)
+            + " " + close_tag)
 
 
 def sync_track_into_xml(xml_content: str, track: Track) -> tuple[str, bool]:
@@ -81,7 +122,7 @@ def _song_with_pois(open_tag: str, body: str, close_tag: str,
         new_body += "\n".join(lines) + "\n"
     if track.playcount is not None:
         new_body = set_playcount(new_body, str(track.playcount))
-    return open_tag + new_body + close_tag
+    return _tidy_song(open_tag, new_body, close_tag)
 
 
 #: Above this many tracks, locating each block by name costs more than one walk
@@ -209,7 +250,10 @@ def remove_song_from_xml(xml_content: str, key: str) -> tuple[str, bool]:
         state["hit"] = True
         return ""
 
-    new_content = _SONG_BLOCK_RE.sub(repl, xml_content)
+    # The whole line goes -- indent and line break with it. Removing only the
+    # block left both behind, and they piled up into whitespace runs VirtualDJ
+    # never writes (see _tidy_song).
+    new_content = _SONG_LINE_RE.sub(repl, xml_content)
     return (new_content, True) if state["hit"] else (xml_content, False)
 
 
@@ -420,7 +464,7 @@ def _song_with_metadata(open_tag: str, body: str, close_tag: str,
                           f"<Comment>{text}</Comment>", body, count=1)
         else:
             body = body + f"  <Comment>{text}</Comment>\n"
-    return open_tag + body + close_tag
+    return _tidy_song(open_tag, body, close_tag)
 
 
 def _vdj_key(track: Track) -> str:
@@ -436,25 +480,30 @@ def _vdj_key(track: Track) -> str:
 
 
 def _render_new_song_block(track: Track) -> str:
-    lines = [format_poi_line(p) for p in track.pois]
-    poi_block = ("\n" + "\n".join(lines) + "\n") if lines else "\n"
+    """A new ``<Song>`` in VirtualDJ's own layout (see :func:`_tidy_song`):
+    blank fields and an unknown size are left out rather than written empty."""
     playcount_attr = f' PlayCount="{track.playcount}"' if track.playcount is not None else ""
     bpm_attr = f' Bpm="{60.0/track.bpm:.6f}"' if track.bpm else ""
-    return (
-        f' <Song FilePath={_qattr(track.path)} FileSize="0">\n'
+    try:
+        size = os.path.getsize(track.path)
+    except OSError:
+        size = 0
+    size_attr = f' FileSize="{size}"' if size else ""
+    body = (
         # Album is written here for the same reason the rest are: it is one of
         # the fields status.py COMPARED_FIELDS checks, so leaving it out made
         # every newly created entry differ from its source the instant it was
         # written -- yellow on arrival, with nothing the user could do about it.
-        f'  <Tags Author={_qattr(track.artist)} Title={_qattr(track.title)} '
-        f'Album={_qattr(track.album)} '
-        f'Genre={_qattr(track.genre)} Key={_qattr(_vdj_key(track))}{bpm_attr} />\n'
+        f'  <Tags Author={_qattr(track.artist or "")} Title={_qattr(track.title or "")} '
+        f'Album={_qattr(track.album or "")} '
+        f'Genre={_qattr(track.genre or "")} Key={_qattr(_vdj_key(track) or "")}{bpm_attr} />\n'
         f'  <Infos SongLength="{track.length or 0:.6f}" '
         f'Bitrate="{track.bitrate or 0}"{playcount_attr} />\n'
         f'  <Comment>{_qtext(track.comment)}</Comment>\n'
-        f'{poi_block}'
-        f' </Song>\n'
+        + "".join(format_poi_line(p) + "\n" for p in track.pois)
     )
+    return " " + _tidy_song(f'<Song FilePath={_qattr(track.path)}{size_attr}>',
+                            body, "</Song>") + "\n"
 
 
 # ============================ .vdjfolder writing =========================

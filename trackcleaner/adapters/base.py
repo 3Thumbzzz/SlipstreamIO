@@ -200,6 +200,11 @@ class LibraryAdapter:
         a session -- there is nothing buffered to write."""
         return 0 if self._session is None else len(self._session["dirty"])
 
+    def accepts_path(self, path: str) -> bool:
+        """Whether this program's collection may hold an entry for ``path``.
+        Most hold any file; VirtualDJ keeps one database per drive."""
+        return True
+
     # -------------------------------------------------------- the timeline
     # Canonical ("native") position = seconds from the first decoded audio
     # sample. Each program says only how ITS stored numbers relate to that, so
