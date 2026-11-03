@@ -12,8 +12,10 @@ disabled.
 from __future__ import annotations
 
 import gc
+import glob
 import os
 import random
+import sys
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QEventLoop, Qt, QTimer
@@ -79,21 +81,46 @@ _MODE_LABELS = {NEW: "Sync New Only", UPDATE: "Sync Update", OVERWRITE: "Sync Ov
 
 
 def _default_paths(settings: Settings):
+    """First-run guesses for the libraries nobody has configured yet.
+
+    **Only the programs' own standard locations.** The list used to end in
+    paths from the machine this was developed on, and one of them --
+    ``D:\\VirtualDJ\\traktor.nml``, an old Traktor 3 collection -- existed on
+    the reported machine: a freshly unpacked 1.0.0 exe took it for the Traktor
+    library and an Overwrite synced into it instead of Traktor.
+    """
     p = settings.paths
     if not p.slp:
         # Ours, so it just lives beside the app; nothing to go looking for.
         p.slp = os.path.join(paths_mod.app_dir(), "library.slp")
     if not p.xml:
-        cand = r"D:\VirtualDJ\database.xml"
-        if os.path.exists(cand):
-            p.xml = cand
+        p.xml = _first_existing(_vdj_database_candidates())
     if not p.nml:
-        for cand in (os.path.join(paths_mod.app_dir(), "collection.nml"),
-                     r"D:\VirtualDJ\traktor.nml",
-                     r"C:\Users\Tententen\Documents\Native Instruments\Traktor 3.5.1\collection.nml"):
-            if os.path.exists(cand):
-                p.nml = cand
-                break
+        p.nml = _first_existing(_traktor_collection_candidates())
+
+
+def _first_existing(candidates) -> str:
+    return next((c for c in candidates if os.path.isfile(c)), "")
+
+
+def _traktor_collection_candidates() -> list:
+    """Traktor keeps one folder per version under Documents\\Native
+    Instruments; the collection written most recently is the one in use."""
+    found = glob.glob(os.path.join(os.path.expanduser("~"), "Documents",
+                                   "Native Instruments", "Traktor*",
+                                   "collection.nml"))
+    return sorted(found, key=os.path.getmtime, reverse=True)
+
+
+def _vdj_database_candidates() -> list:
+    """VirtualDJ's home database, then -- on Windows -- the database it keeps
+    at the root of each drive (``D:\\VirtualDJ\\database.xml``)."""
+    out = [os.path.join(os.path.expanduser("~"), "Documents", "VirtualDJ",
+                        "database.xml")]
+    if sys.platform == "win32":
+        out += [f"{letter}:\\VirtualDJ\\database.xml"
+                for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ"]
+    return out
 
 
 def _mtime(path: str):

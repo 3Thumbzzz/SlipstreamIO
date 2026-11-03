@@ -5,4 +5,4 @@ desktop application. See ``HANDOFF.md`` ("Cue timing") for the verified
 cue-correction model that ``model/cues.py`` reuses unchanged.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"

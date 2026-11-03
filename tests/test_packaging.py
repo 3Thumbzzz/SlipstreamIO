@@ -121,3 +121,75 @@ def test_every_command_line_call_hides_its_console_window():
                     missing.append(f"{os.path.relpath(path, root)}:{node.lineno}")
 
     assert missing == []
+
+
+# ===================== first-run library guesses ==============================
+def _home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(os.path, "expanduser",
+                        lambda p: str(home) if p == "~" else p)
+    return home
+
+
+def _settings():
+    from trackcleaner.config.paths import Settings
+    return Settings()
+
+
+def test_a_first_run_finds_the_traktor_collection_written_last(tmp_path, monkeypatch):
+    import time
+    from trackcleaner.ui import main_window
+    home = _home(tmp_path, monkeypatch)
+    ni = home / "Documents" / "Native Instruments"
+    old, new = ni / "Traktor 3.5.1" / "collection.nml", ni / "Traktor 4.0.0" / "collection.nml"
+    for f in (old, new):
+        f.parent.mkdir(parents=True)
+        f.write_text("<NML/>")
+    os.utime(old, (time.time() - 86400, time.time() - 86400))
+    monkeypatch.setattr(main_window, "_vdj_database_candidates", lambda: [])
+    s = _settings()
+
+    main_window._default_paths(s)
+
+    assert s.paths.nml == str(new)
+
+
+def test_a_first_run_never_guesses_a_stray_collection(tmp_path, monkeypatch):
+    """1.0.0 took D:\VirtualDJ\traktor.nml -- an old Traktor 3 collection on
+    the reported machine -- for the Traktor library, and an Overwrite synced
+    into it. Only the program's own location is a guess."""
+    from trackcleaner.ui import main_window
+    _home(tmp_path, monkeypatch)
+    monkeypatch.setattr(main_window, "_vdj_database_candidates", lambda: [])
+    s = _settings()
+
+    main_window._default_paths(s)
+
+    assert s.paths.nml == ""
+    assert all("traktor.nml" not in c.lower() and "tententen" not in c.lower()
+               for c in main_window._traktor_collection_candidates()
+               + main_window._vdj_database_candidates())
+
+
+def test_a_first_run_finds_virtualdjs_home_database(tmp_path, monkeypatch):
+    from trackcleaner.ui import main_window
+    home = _home(tmp_path, monkeypatch)
+    db = home / "Documents" / "VirtualDJ" / "database.xml"
+    db.parent.mkdir(parents=True)
+    db.write_text("<VirtualDJ_Database/>")
+    s = _settings()
+
+    main_window._default_paths(s)
+
+    assert s.paths.xml == str(db)
+
+
+def test_a_configured_path_is_never_replaced(tmp_path, monkeypatch):
+    from trackcleaner.ui import main_window
+    _home(tmp_path, monkeypatch)
+    s = _settings()
+    s.paths.nml, s.paths.xml = r"X:\mine.nml", r"X:\mine.xml"
+
+    main_window._default_paths(s)
+
+    assert (s.paths.nml, s.paths.xml) == (r"X:\mine.nml", r"X:\mine.xml")

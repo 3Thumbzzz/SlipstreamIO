@@ -9,7 +9,7 @@ about to touch. Sections are referenced **by name**, never by number, so
 inserting one cannot falsify a citation elsewhere.
 
 Snapshot: **74 package modules, 75 test modules + fixtures and `conftest.py`,
-1773 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
+1777 tests passing, 5 skipped** (2026-11-03, Python 3.13, PySide6 6.11.1).
 
 ---
 
@@ -65,6 +65,13 @@ macOS (Apple silicon) runners and publishes a release with the two zips.
 - **A packaged build has its own state.** Its start-time cache, baseline and
   settings sit beside the exe, separate from a source checkout's, so a first
   sync from the exe probes every track it touches.
+- **First-run library guesses use only the programs' standard locations**
+  (`main_window._default_paths`): the most recently written
+  `Documents/Native Instruments/Traktor*/collection.nml`, and VirtualDJ's
+  `Documents/VirtualDJ/database.xml` then `<drive>:\VirtualDJ\database.xml`.
+  The list used to end in development-machine paths; `D:\VirtualDJ\traktor.nml`
+  (an old Traktor 3 collection) existed on the reported machine, so a freshly
+  unpacked 1.0.0/1.0.1 exe took it for Traktor and an Overwrite synced into it.
 - **Windows-only features stay Windows-only on macOS:** Recycle Bin
   (`io/recycle.py` refuses, so nothing is deleted), Explorer reveal, the
   "program is running" check (answers "can't tell"), and the drag-scroll mouse
