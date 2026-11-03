@@ -1,0 +1,86 @@
+"""Left/Right arrow navigation through the playlist pane.
+
+The arrows step the sidebar one visible row at a time. A **double tap** within
+200 ms on a folder expands (Right) or collapses (Left) it — so the arrows
+navigate by default and only restructure the tree when you ask twice.
+
+The timing rule is a plain function of (key, timestamp), so the window is stated
+outright here rather than slept through.
+"""
+
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt                                          # noqa: E402
+from PySide6.QtWidgets import QApplication                             # noqa: E402
+
+from trackcleaner.config.paths import Settings                         # noqa: E402
+from trackcleaner.io import backup as backup_mod                       # noqa: E402
+from trackcleaner.model.library import TRAKTOR, VDJ                    # noqa: E402
+from trackcleaner.ui.tap_detect import DOUBLE_TAP_MS, DoubleTapDetector  # noqa: E402
+from fixtures import write_sample                                      # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def app():
+    return QApplication.instance() or QApplication([])
+
+
+# ============================== the timing rule =============================
+def test_two_quick_presses_of_the_same_key_are_a_double_tap():
+    d = DoubleTapDetector()
+
+    assert d.tap("right", 1000.0) is False
+    assert d.tap("right", 1000.0 + DOUBLE_TAP_MS - 1) is True
+
+
+def test_a_slow_second_press_is_two_singles():
+    d = DoubleTapDetector()
+
+    assert d.tap("right", 1000.0) is False
+    assert d.tap("right", 1000.0 + DOUBLE_TAP_MS + 1) is False
+
+
+def test_the_boundary_counts_as_a_double_tap():
+    """Stated explicitly so the comparison cannot drift between <= and <."""
+    d = DoubleTapDetector()
+    d.tap("right", 1000.0)
+
+    assert d.tap("right", 1000.0 + DOUBLE_TAP_MS) is True
+
+
+def test_alternating_keys_never_double_tap():
+    """Stepping quickly back and forth must not expand folders at random."""
+    d = DoubleTapDetector()
+
+    assert d.tap("right", 1000.0) is False
+    assert d.tap("left", 1010.0) is False
+    assert d.tap("right", 1020.0) is False
+
+
+def test_three_fast_presses_are_one_double_then_a_single():
+    """A completed gesture consumes its history, so taps do not overlap into a
+    second double the user never made."""
+    d = DoubleTapDetector()
+
+    assert d.tap("right", 1000.0) is False
+    assert d.tap("right", 1050.0) is True
+    assert d.tap("right", 1100.0) is False
+
+
+def test_reset_breaks_a_part_formed_gesture():
+    """Focus leaving and coming back must not pair a tap from before with one
+    from after."""
+    d = DoubleTapDetector()
+    d.tap("right", 1000.0)
+
+    d.reset()
+
+    assert d.tap("right", 1050.0) is False
+
+

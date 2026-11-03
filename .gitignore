@@ -1,0 +1,25 @@
+# Python / tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv*/
+build/
+dist/
+
+# What the app writes beside itself at runtime: the user's own library state.
+# None of it belongs in the repository.
+backups/
+logs/
+trackcleaner_settings.json
+sync_baseline.csv
+start_time_report.csv
+serato_cues.json
+library.slp
+userControls.ini
+collection.nml
+database.xml
+order
+
+# Editor / assistant settings
+.vscode/
+.claude/
